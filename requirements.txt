@@ -1,0 +1,8 @@
+Flask==3.0.3
+flask-socketio==5.3.6
+eventlet==0.35.2
+python-dotenv==1.0.1
+pymongo==4.8.0
+dnspython==2.7.0
+filetype==1.2.0
+werkzeug==3.0.3
