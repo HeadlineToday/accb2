@@ -1,121 +1,53 @@
-{% extends "base.html" %}
-{% block content %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VIMS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <aside class="side">
+    <div class="brand">VIMS</div>
+    <nav>
+      <a class="navicon active">🏠</a>
+      <a class="navicon">#</a>
+      <a class="navicon">🔔</a>
+      <a class="navicon">✉️</a>
+    </nav>
+  </aside>
 
-<section class="composer">
-  <form action="{{ url_for('create_post') }}" method="post" enctype="multipart/form-data">
-    <textarea name="text" placeholder="What's on your mind?" maxlength="500"></textarea>
-    <div class="row">
-      <input type="file" name="image" accept="image/*">
-      {% if cooldown_left and cooldown_left>0 %}
-        <span class="muted">Cooldown: {{ cooldown_left }}s</span>
+  <main class="main">
+    <header class="topbar">
+      <input class="search" placeholder="Search" />
+      <a class="btn" href="{{ url_for('index') }}">Home</a>
+      <a class="btn" href="{{ url_for('admin') }}">Admin</a>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div id="flashes">
+          {% for cat, msg in messages %}
+            <div class="flash {{cat}}">{{ msg }}</div>
+          {% endfor %}
+        </div>
       {% endif %}
-      <button class="btn primary" type="submit">New Post</button>
-    </div>
-  </form>
-</section>
+    {% endwith %}
 
-<section id="feed" class="feed">
-  {% for p in posts %}
-  <article class="card" data-post-id="{{ p._id }}">
-    <div class="avatar"></div>
-    <div class="body">
-      <div class="head">
-        <strong>{{ p.anonymous_tag }}</strong>
-        <span class="time">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-        <span class="status {{ p.status }}">{{ p.status }}</span>
-      </div>
-      {% if p.text %}<p class="text">{{ p.text }}</p>{% endif %}
-      {% if p.image_url %}<img class="img" src="{{ p.image_url }}" alt="image">{% endif %}
-      <div class="actions">
-        <form action="{{ url_for('like', post_id=p._id) }}" method="post" class="like-form">
-          <button class="icon like-btn" type="submit" data-post-id="{{ p._id }}">
-            <span class="heart">♥</span>
-            <span class="like-text">{{ p.likes or 0 }}</span>
-          </button>
-        </form>
-        <button class="icon">💬</button>
-        <button class="icon">🔁</button>
-      </div>
-    </div>
-  </article>
-  {% endfor %}
-</section>
-{% endblock %}
+    {% block content %}{% endblock %}
+  </main>
 
-{% block scripts %}
-<script>
-// Delegated like submit (works for future posts)
-document.getElementById('feed').addEventListener('submit', async (e) => {
-  const form = e.target.closest('.like-form');
-  if (!form) return;
-  e.preventDefault();
-  const btn = form.querySelector('.like-btn');
-  const pid = btn.dataset.postId;
-  // Optimistic toggle
-  const countEl = btn.querySelector('.like-text');
-  const heart = btn.querySelector('.heart');
-  const orig = parseInt(countEl.textContent, 10) || 0;
-  const likedLocally = heart.classList.toggle('liked');
-  countEl.textContent = String(orig + (likedLocally ? 1 : -1));
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    // One global socket for every page:
+    window.socket = io();
 
-  try {
-    const res = await fetch(form.action, { method: 'POST' });
-    const data = await res.json();
-    countEl.textContent = String(data.likes);
-    if (data.liked) heart.classList.add('liked'); else heart.classList.remove('liked');
-  } catch {
-    // revert on failure
-    heart.classList.toggle('liked');
-    countEl.textContent = String(orig);
-  }
-});
-
-// Realtime: new_post → prepend card
-window.socket.on('new_post', (p) => {
-  if (p.status !== 'active') return;
-  const html = `
-  <article class="card" data-post-id="${p._id}">
-    <div class="avatar"></div>
-    <div class="body">
-      <div class="head">
-        <strong>${p.anonymous_tag}</strong>
-        <span class="time">${new Date(p.created_at).toISOString().slice(0,16).replace('T',' ')}</span>
-        <span class="status active">active</span>
-      </div>
-      ${p.text ? `<p class="text"></p>` : ``}
-      ${p.image_url ? `<img class="img" src="${p.image_url}" alt="image">` : ``}
-      <div class="actions">
-        <form action="/like/${p._id}" method="post" class="like-form">
-          <button class="icon like-btn" type="submit" data-post-id="${p._id}">
-            <span class="heart">♥</span>
-            <span class="like-text">${p.likes}</span>
-          </button>
-        </form>
-        <button class="icon">💬</button>
-        <button class="icon">🔁</button>
-      </div>
-    </div>
-  </article>`;
-  const feed = document.getElementById('feed');
-  feed.insertAdjacentHTML('afterbegin', html);
-  // set text content safely after insertion to avoid HTML injection
-  if (p.text) feed.querySelector('.card[data-post-id="'+p._id+'"] .text').textContent = p.text;
-});
-
-// Realtime: like_update → update counts everywhere
-window.socket.on('like_update', (d) => {
-  const el = document.querySelector('.card[data-post-id="'+d.post_id+'"] .like-text');
-  if (el) el.textContent = String(d.likes);
-});
-
-// Realtime: post_status_changed → hide/show card
-window.socket.on('post_status_changed', (d) => {
-  const card = document.querySelector('.card[data-post-id="'+d.post_id+'"]');
-  if (!card) return;
-  const badge = card.querySelector('.status');
-  badge.textContent = d.status;
-  badge.className = 'status ' + d.status;
-  card.style.display = d.status === 'hidden' ? 'none' : '';
-});
-</script>
-{% endblock %}
+    // Auto-dismiss flashes
+    setTimeout(() => {
+      const f = document.getElementById('flashes');
+      if (f) f.remove();
+    }, 4000);
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
