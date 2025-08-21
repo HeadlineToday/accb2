@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Admin Dashboard</h2>
+
+<section class="grid2">
+  <div>
+    <h3>Posts</h3>
+    <table class="table" id="postsTable">
+      <thead><tr><th>When</th><th>User</th><th>Text</th><th>Image</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for p in posts %}
+        <tr data-admin-post-id="{{ p._id }}">
+          <td>{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ p.anonymous_tag }}</td>
+          <td class="cut">{{ p.text }}</td>
+          <td>{% if p.image_url %}<a href="{{ p.image_url }}" target="_blank">view</a>{% endif %}</td>
+          <td class="status">{{ p.status }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin_hide_post') }}" data-action="hide" style="display: {{ 'none' if p.status=='hidden' else 'inline' }}">
+              <input type="hidden" name="post_id" value="{{ p._id }}"><button class="btn danger" type="submit">Hide</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_unhide_post') }}" data-action="unhide" style="display: {{ 'inline' if p.status=='hidden' else 'none' }}">
+              <input type="hidden" name="post_id" value="{{ p._id }}"><button class="btn" type="submit">Unhide</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    <h3>Banned Words</h3>
+    <form method="post" action="{{ url_for('add_word') }}" class="row">
+      <input name="word" placeholder="add word">
+      <button class="btn" type="submit">Add</button>
+    </form>
+    <ul>
+      {% for w in words %}
+        <li>{{ w.word }}
+          <form method="post" action="{{ url_for('remove_word') }}" style="display:inline;">
+            <input type="hidden" name="word_id" value="{{ w._id }}"><button class="btn tiny" type="submit">✕</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Listen for post status changes (reflect in table without refresh)
+window.socket.on('post_status_changed', (d) => {
+  const row = document.querySelector('tr[data-admin-post-id="'+d.post_id+'"]');
+  if (!row) return;
+  row.querySelector('.status').textContent = d.status;
+  row.querySelector('form[data-action="hide"]').style.display = d.status === 'hidden' ? 'none' : 'inline';
+  row.querySelector('form[data-action="unhide"]').style.display = d.status === 'hidden' ? 'inline' : 'none';
+});
+
+// Append new posts live
+window.socket.on('new_post', (p) => {
+  const tbody = document.querySelector('#postsTable tbody');
+  const tr = document.createElement('tr');
+  tr.setAttribute('data-admin-post-id', p._id);
+  tr.innerHTML = `
+    <td>${new Date(p.created_at).toISOString().slice(0,16).replace('T',' ')}</td>
+    <td>${p.anonymous_tag}</td>
+    <td class="cut"></td>
+    <td>${p.image_url ? `<a href="${p.image_url}" target="_blank">view</a>` : ''}</td>
+    <td class="status">${p.status}</td>
+    <td>
+      <form method="post" action="/admin/hide_post" data-action="hide"><input type="hidden" name="post_id" value="${p._id}"><button class="btn danger" type="submit">Hide</button></form>
+      <form method="post" action="/admin/unhide_post" data-action="unhide" style="display:none;"><input type="hidden" name="post_id" value="${p._id}"><button class="btn" type="submit">Unhide</button></form>
+    </td>`;
+  tbody.prepend(tr);
+  tr.querySelector('.cut').textContent = p.text || '';
+});
+</script>
+{% endblock %}
